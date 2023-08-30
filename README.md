@@ -31,13 +31,13 @@ Statevector simulator to find the ground state of two coupled oscillators using 
 and momentum = 0.5 with 100 gradient descent steps.
 
   ```
-  python optimisation.py --backend statevector_simulator --num-oscillators 2 --gammas [[1.]] --solver aqgd --eta 0.25 --momentum 0.5 --maxeval 100
+  python optimisation.py --backend statevector_simulator --num-oscillators 2 --gammas '[[1.]]' --solver aqgd --eta 0.25 --momentum 0.5 --maxeval 100
   ```
 
 Shot-based QASM simulation with ADAM optimiser.
 
   ```
-  python optimisation.py --backend qasm_simulator --num-oscillators 2 --gammas [[1.]] --shots 500 --solver adam --maxeval 100
+  python optimisation.py --backend qasm_simulator --num-oscillators 2 --gammas '[[1.]]' --shots 500 --solver adam --maxeval 100
   ```
 
 ### Reading saved outputs

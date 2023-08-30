@@ -1,4 +1,4 @@
-from qiskit.aqua.components.optimizers import AQGD
+from aqua.components.optimizers import AQGD
 
 from solver.solver import Solver
 

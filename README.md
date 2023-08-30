@@ -9,7 +9,55 @@ The method and results for this work are presented in
 **105** 062409 (2022).](https://doi.org/10.1103/PhysRevA.105.062409)
 ([arXiv:2110.00968](https://doi.org/10.48550/arXiv.2110.00968))
 
-## Functionality
+## Example running code
+
+### Creating python environment
+
+To create python environment (requires conda):
+
+```
+conda env create -f environment.yml
+```
+
+To activate:
+
+```
+conda activate VQECoarseGrained
+```
+
+### Running optimisation
+
+Statevector simulator to find the ground state of two coupled oscillators using the AQGD optimiser. Chosen eta = 0.25
+and momentum = 0.5 with 100 gradient descent steps.
+
+  ```
+  python optimisation.py --backend statevector_simulator --num-oscillators 2 --gammas [[1.]] --solver aqgd --eta 0.25 --momentum 0.5 --maxeval 100
+  ```
+
+Shot-based QASM simulation with ADAM optimiser.
+
+  ```
+  python optimisation.py --backend qasm_simulator --num-oscillators 2 --gammas [[1.]] --shots 500 --solver adam --maxeval 100
+  ```
+
+### Reading saved outputs
+
+For time intensive simulations or real device experiments, you may want to run the optimisation procedure using an
+external cluster or machine and then read and analyse the results locally. Saved outputs can be read using
+`read_outputs.py` as follows
+
+  ```
+  python read_outputs.py --directory ./output_example/pair_qhos_statevector_simulator
+  ```
+
+this generates plots visualising the state and optimisation procedure within the supplied output directory.
+
+The variational optimisation routine is run using `optimisation_run.py`. Runtime arguments define your cost function,
+coupling-constant(s) noise model, ansatz, optimisation method, number of measurements and whether you use a
+statevector or shot-based simulation. There are additional optional arguments that are specific to the optimisation
+method chosen as well arguments that allow you to add non-linear to the Hamiltonian.
+
+## Description of codebase
 
 The main functionality of the repository is used in the `NCoupledQHOFunc` class. This constructs the Hamiltonian,
 ansatz circuit and simulator/real device objects in order to evaluate expectation values of the
@@ -34,55 +82,20 @@ Various gradient and non-gradient based optimisers are also included. This inclu
 and finite difference gradient descent. In the cases of ADAM and finite difference methods, these include modified
 versions of Qiskit code. Modified and derivative versions must retain the copyright license included within those files.
 
-## Running the optimisation routine
-
-The variational optimisation routine is run using `optimisation_run.py`. Runtime arguments define your cost function,
-coupling-constant(s) noise model, ansatz, optimisation method, number of measurements and whether you use a
-statevector or shot-based simulation. There are additional optional arguments that are specific to the optimisation
-method chosen as well arguments that allow you to add non-linear to the Hamiltonian.
-
-This repository makes extensive use of the (no longer supported) Qiskit Aqua. Details about the migration can be found
-[here](https://qiskit.org/documentation/stable/0.26/aqua_tutorials/Qiskit%20Algorithms%20Migration%20Guide.html), in
-which functionality of Qiskit operator objects has significantly changed. Installing the required dependences is now a
-bit of a pain, the easiest way to build a suitable environment to run this code (as of August 2023) is using the
-`environment.yml` file included.
-
-Below are some examples of running the optimisation.
-
-Statevector simulator to find the ground state of two coupled oscillators using the AQGD optimiser. Chosen eta = 0.25
-and momentum = 0.5 with 1000 optimisation steps for the gradient based optimisation.
-
-  ```
-  python optimisation.py --backend statevector_simulator --num-oscillators 2 --gammas [[1.]] --solver aqgd --eta 0.25 --momentum 0.5 --maxeval 100
-  ```
-
-Shot-based QASM simulation with ADAM optimiser.
-
-  ```
-  python optimisation.py --backend qasm_simulator --num-oscillators 2 --gammas [[1.]] --shots 5000 --solver adam --maxeval 100
-  ```
-
-The outputs from each optimisation routine as well as arguments used will be saved into their own folder within the
-`output/` directory. See `OptimisationParser` for detailed descirption of all runtime arguments.
-
-## Reading saved outputs
-
-For time intensive simulations or real device experiments, you may want to run the optimisation procedure using an
-external cluster or machine and then read and analyse the results locally. Saved outputs can be read using
-`read_outputs.py` as follows
-
-  ```
-  python read_outputs.py --directory ./output_example/pair_qhos_statevector_simulator
-  ```
-
-this generates plots visualising the state and optimisation procedure within the supplied output directory.
-
 ## Not contained within the repository
 
 To make this code open access, some functionality that requires paid licenses or non-open source code has been removed
 in a minimal way. There may be traces and options remaining for such removed functionality. This includes,
 the [MIDACO optimiser](http://www.midaco-solver.com/) as well as methods for performing error mitigation based
 on the [Lanczos procedure](https://doi.org/10.22331/q-2021-07-01-492).
+
+## A note on the use of Qiskit-Aqua
+
+This code was originally written in 2019/2020 and made considerable use
+of [Qiskit Aqua](https://github.com/qiskit-community/qiskit-aqua). Since then, Qiskit Aqua is no
+longer supported (in fact pip/conda installation commonly fails due to cython compilation error). Thus, to include Aqua
+functionality, this codebase includes a copy of the Qiskit Aqua code, with minor modifications so that it works with
+later versions of qiskit (see folder `./aqua`). Qiskit-aqua uses an Apache 2.0 license.
 
 ## References
 
@@ -100,4 +113,7 @@ Quantum **5** (2021)
 [5] S. Sim et al. "Expressibility and entangling capability of parameterized quantum circuits for hybrid
 quantum‐classical algorithms." Advanced Quantum Technologies **2** (2019)
 
+## License
+
+This code uses an Apache 2.0 license.
 

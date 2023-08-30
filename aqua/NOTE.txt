@@ -1,0 +1,12 @@
+This directory contains a copy of Qiskit Aqua with minor changes.
+
+Changed files are
+
+aqua/__init.py__        [removal of algorithms]
+aqua/aqua_globals.py    [local_hardware_info for newer versions of qiskit]
+aqua/operators/legacy/pauli_graph.py    [to work with new qiskit Pauli object, changes highlighted]
+aqua/algorithms         [deleted]
+aqua/componets          [delete all contents except for optimizers]
+
+as well as all uses of np.int, np.float, np.complex, np.bool to new numpy syntax np.int_, np.float_, np.complex_,
+np.bool_ throughout.

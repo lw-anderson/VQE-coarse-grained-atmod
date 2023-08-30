@@ -11,17 +11,22 @@ from typing import List, Union, Tuple, Dict, Any
 import numpy as np
 from numpy.typing import NDArray
 from qiskit import Aer, IBMQ, transpile, QuantumRegister, QuantumCircuit
-from qiskit.aqua import AquaError
-from qiskit.aqua.operators import WeightedPauliOperator, TPBGroupedWeightedPauliOperator
-from qiskit.aqua.operators.legacy import op_converter
+# from qiskit.aqua import AquaError
+# from qiskit.aqua.operators import WeightedPauliOperator, TPBGroupedWeightedPauliOperator
+# from qiskit.aqua.operators.legacy import op_converter
 from qiskit.compiler import assemble
 from qiskit.ignis.mitigation import complete_meas_cal, CompleteMeasFitter
-from qiskit.providers.aer.noise import NoiseModel
-from qiskit.providers.ibmq import IBMQJobManager, IBMQBackend
+# from qiskit.providers.aer.noise import NoiseModel
+# from qiskit.providers.ibmq import IBMQJobManager, IBMQBackend
 from qiskit.quantum_info import Pauli
 from qiskit.utils import QuantumInstance
 from qiskit.utils.backend_utils import is_statevector_backend
+from qiskit_aer.noise import NoiseModel
+from qiskit_ibm_provider import IBMBackend
 
+from aqua import AquaError
+from aqua.operators import WeightedPauliOperator, TPBGroupedWeightedPauliOperator
+from aqua.operators.legacy import op_converter
 from measure_commuting_operators import one_factorisation
 from measure_commuting_operators.sorted_insertion import sorted_insertion
 from noise_mitigation.zero_noise_extrapolation import repeat_cnots, fold_circuit
@@ -363,7 +368,7 @@ class NCoupledQHOFunc(ABC):
     def construct_circuit_operator(self, circuit: QuantumCircuit,
                                    operator: Union[WeightedPauliOperator, np.ndarray],
                                    para_dic: Dict[str, float],
-                                   backend: Union[IBMQBackend, None] = None,
+                                   backend: Union[IBMBackend, None] = None,
                                    statevector_mode: Union[bool, None] = None,
                                    circuit_name_prefix: str = '',
                                    do_transpile: bool = True) -> List[QuantumCircuit]:
@@ -456,123 +461,72 @@ class NCoupledQHOFunc(ABC):
         outputs = []
         zero_state_overlaps = []
 
-        # if running on real device, circuits must be batched/split up to correct sizes to run as managed job set
-        if isinstance(self.backend, IBMQBackend):
+        for offset_idx in range(0, len(parameter_sets), max_evals_at_once):
+            subset_parameter_sets = parameter_sets[offset_idx:offset_idx + max_evals_at_once]
+            subset_operators = operators[offset_idx:offset_idx + max_evals_at_once]
+            subset_cnots = repeated_cnots[offset_idx:offset_idx + max_evals_at_once]
+            subset_folds = circuit_folds[offset_idx:offset_idx + max_evals_at_once]
             circuits = []
-            print(f'{datetime.now()}: constructing circuits')
             for idx, (x, operator, cnots, folds) \
-                    in enumerate(zip(parameter_sets, operators, repeated_cnots, circuit_folds)):
+                    in enumerate(zip(subset_parameter_sets, subset_operators, subset_cnots, subset_folds)):
+                assert len(self.all_params) == len(x), ValueError("dimension of x is not same as number of params.")
+
                 para_dic = {k: l for k, l in zip(self.all_params, x)}
                 circuit = self.construct_circuit_operator(noise_mitigated_circuits[str(cnots) + str(folds)],
                                                           operator, para_dic,
                                                           statevector_mode=self.quantum_instance.is_statevector,
-                                                          circuit_name_prefix=str(idx))
+                                                          circuit_name_prefix=str(idx + offset_idx),
+                                                          do_transpile=not self.quantum_instance.is_statevector)
                 circuits.append(circuit)
 
-            circuits_to_be_run = functools.reduce(lambda x, y: x + y, circuits)
+            to_be_simulated_circuits = functools.reduce(lambda x, y: x + y, circuits)
+            results = self.quantum_instance.execute(to_be_simulated_circuits, had_transpiled=True)
 
-            job_manager = IBMQJobManager()
-            print(f'{datetime.now()}: running circuits')
-            shots = min([8192, self.backend.configuration().max_shots])
-            managed_job_set = job_manager.run(circuits_to_be_run, max_experiments_per_job=max_evals_at_once,
-                                              backend=self.backend, shots=shots)
-            print('jobset id = ', managed_job_set.job_set_id())
-            results = managed_job_set.results()
+            if hasattr(self, 'meas_calibration_fitter'):
+                self.meas_calibration_fitter.filter.apply(results)
 
-            results = results.combine_results()
+            for idx, operator in enumerate(subset_operators):
 
-            print(f'{datetime.now()}: run circuits')
+                # for statevector simulator, each circuit is run a single time (as defined by
+                # self.construct_circuit_operator to give statevector.
+                if self.quantum_instance.is_statevector:
+                    assert type(operator) is np.ndarray, TypeError(
+                        "If using statevector simulator, operator should be numpy array.")
 
-            for idx, operator in enumerate(operators):
-                mean, stdev = operator.evaluate_with_result(
-                    result=results, statevector_mode=self.quantum_instance.is_statevector,
-                    circuit_name_prefix=str(idx))
+                    wavefunction = [result.data.statevector for result in results.results if
+                                    getattr(getattr(result, "header", None), "name", "") == f"{idx}psi"]
+
+                    assert len(wavefunction) == 1, f"Only one simulated circuit should match name {idx}psi."
+
+                    mean, stdev = np.array(wavefunction[0]).T.conj() @ operator @ np.array(wavefunction[0]), 0.
+
+                    zero_overlap = abs(wavefunction[0][0]) ** 2
+
+                # whereas shot based qasm_simulation runs different circuit for each pauli basis and uses
+                # methods TPBGroupedWeightedPauliOperator to recombine and calculate total expectation.
+                else:
+                    assert type(operator) is TPBGroupedWeightedPauliOperator, (TypeError(
+                        "If using shot based simulator, operator should be TPBGroupedWeightedPauliOperator"))
+
+                    mean, stdev = operator.evaluate_with_result(
+                        result=results, statevector_mode=self.quantum_instance.is_statevector,
+                        circuit_name_prefix=str(idx + offset_idx))
+
+                    zero_overlap = None
+                    if return_zero_state_overlap:
+                        if Pauli("Z" * self.n) in [b[0] for b in operator.basis]:
+                            zzzz_counts = results.get_counts(str(idx + offset_idx) + "Z" * self.n)
+                            zero_overlap = zzzz_counts['0' * self.n] / sum(zzzz_counts.values())
+
                 outputs.append((np.real(mean), np.real(stdev)))
+                zero_state_overlaps.append(zero_overlap)
 
-                if return_zero_state_overlap:
-                    if Pauli("Z" * self.n) in [b[0] for b in operator.basis]:
-                        zzzz_counts = results.get_counts(str(idx) + "Z" * self.n)
-                        zero_overlap = zzzz_counts['0' * self.n] / sum(zzzz_counts.values())
-                    else:
-                        zero_overlap = None
-                    zero_state_overlaps.append(zero_overlap)
+        assert len(outputs) == len(parameter_sets), ValueError('Mismatch between input and output lengths.')
 
-            assert len(outputs) == len(parameter_sets), ValueError('Mismatch between input and output lengths.')
+        if return_zero_state_overlap:
+            return outputs, zero_state_overlaps
 
-            if return_zero_state_overlap:
-                return outputs, zero_state_overlaps
-
-            return outputs
-
-        # if using simulator (whether statevector or shot based), circuits are batched up into single job
-        # according to max_evals_at_once.
-        else:
-            for offset_idx in range(0, len(parameter_sets), max_evals_at_once):
-                subset_parameter_sets = parameter_sets[offset_idx:offset_idx + max_evals_at_once]
-                subset_operators = operators[offset_idx:offset_idx + max_evals_at_once]
-                subset_cnots = repeated_cnots[offset_idx:offset_idx + max_evals_at_once]
-                subset_folds = circuit_folds[offset_idx:offset_idx + max_evals_at_once]
-                circuits = []
-                for idx, (x, operator, cnots, folds) \
-                        in enumerate(zip(subset_parameter_sets, subset_operators, subset_cnots, subset_folds)):
-                    assert len(self.all_params) == len(x), ValueError("dimension of x is not same as number of params.")
-
-                    para_dic = {k: l for k, l in zip(self.all_params, x)}
-                    circuit = self.construct_circuit_operator(noise_mitigated_circuits[str(cnots) + str(folds)],
-                                                              operator, para_dic,
-                                                              statevector_mode=self.quantum_instance.is_statevector,
-                                                              circuit_name_prefix=str(idx + offset_idx),
-                                                              do_transpile=not self.quantum_instance.is_statevector)
-                    circuits.append(circuit)
-
-                to_be_simulated_circuits = functools.reduce(lambda x, y: x + y, circuits)
-                results = self.quantum_instance.execute(to_be_simulated_circuits, had_transpiled=True)
-
-                if hasattr(self, 'meas_calibration_fitter'):
-                    self.meas_calibration_fitter.filter.apply(results)
-
-                for idx, operator in enumerate(subset_operators):
-
-                    # for statevector simulator, each circuit is run a single time (as defined by
-                    # self.construct_circuit_operator to give statevector.
-                    if self.quantum_instance.is_statevector:
-                        assert type(operator) is np.ndarray, TypeError(
-                            "If using statevector simulator, operator should be numpy array.")
-
-                        wavefunction = [result.data.statevector for result in results.results if
-                                        getattr(getattr(result, "header", None), "name", "") == f"{idx}psi"]
-
-                        assert len(wavefunction) == 1, f"Only one simulated circuit should match name {idx}psi."
-
-                        mean, stdev = np.array(wavefunction[0]).T.conj() @ operator @ np.array(wavefunction[0]), 0.
-
-                        zero_overlap = abs(wavefunction[0][0]) ** 2
-
-                    # whereas shot based qasm_simulation runs different circuit for each pauli basis and uses
-                    # methods TPBGroupedWeightedPauliOperator to recombine and calculate total expectation.
-                    else:
-                        assert type(operator) is TPBGroupedWeightedPauliOperator, (TypeError(
-                            "If using shot based simulator, operator should be TPBGroupedWeightedPauliOperator"))
-
-                        mean, stdev = operator.evaluate_with_result(
-                            result=results, statevector_mode=self.quantum_instance.is_statevector,
-                            circuit_name_prefix=str(idx + offset_idx))
-
-                        zero_overlap = None
-                        if return_zero_state_overlap:
-                            if Pauli("Z" * self.n) in [b[0] for b in operator.basis]:
-                                zzzz_counts = results.get_counts(str(idx + offset_idx) + "Z" * self.n)
-                                zero_overlap = zzzz_counts['0' * self.n] / sum(zzzz_counts.values())
-
-                    outputs.append((np.real(mean), np.real(stdev)))
-                    zero_state_overlaps.append(zero_overlap)
-
-            assert len(outputs) == len(parameter_sets), ValueError('Mismatch between input and output lengths.')
-
-            if return_zero_state_overlap:
-                return outputs, zero_state_overlaps
-
-            return outputs
+        return outputs
 
     def perform_repeated_measurements(self, x: np.ndarray, num_evaluations: int):
         """

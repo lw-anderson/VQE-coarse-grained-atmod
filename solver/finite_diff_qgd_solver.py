@@ -30,9 +30,9 @@ import warnings
 from typing import Callable, Tuple, List, Dict, Union
 
 import numpy as np
-from qiskit.aqua import AquaError
-from qiskit.aqua.components.optimizers import Optimizer, OptimizerSupportLevel
-from qiskit.aqua.utils.validation import validate_range_exclusive_max
+from aqua import AquaError
+from aqua.components.optimizers import Optimizer, OptimizerSupportLevel
+from aqua.utils.validation import validate_range_exclusive_max
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +136,7 @@ class FiniteDifferenceQGDOptimizer(Optimizer):
         """
         num_params = len(params)
         eps = 0.01
+        # CHANGED TO USE FINITE DIFFERENCE RATHER THAN PARAMETER SHIFT RULE
         param_sets_to_eval = params + np.concatenate(
             (np.zeros((1, num_params)),  # copy of the parameters as is
              np.eye(num_params) * eps,  # copy of the parameters with the positive shift

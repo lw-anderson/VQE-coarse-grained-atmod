@@ -1,4 +1,4 @@
-from qiskit.aqua.components.optimizers import COBYLA
+from aqua.components.optimizers import COBYLA
 
 from solver.solver import Solver
 

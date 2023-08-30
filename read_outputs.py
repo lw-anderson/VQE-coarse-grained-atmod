@@ -65,50 +65,32 @@ def read_outputs(output_directory, all_plots=True):
 
     os.chdir(output_directory)
 
-    problem_func_needed = not os.path.isfile("optimisation_output.npy") \
-                          or os.path.isfile('full_mitigation_terms.npy')
-
-    if problem_func_needed:
-        print('Creating problem_func from args.')
-        problem_func = CostFuncFactory(runtime_args).get()
-    else:
-        problem_func = None
+    problem_func = CostFuncFactory(runtime_args).get()
 
     if type(runtime_args.gammas) == str:
         runtime_args.gammas = eval(runtime_args.gammas)
 
-    if os.path.isfile("optimisation_output.npy"):
-        output = np.load("optimisation_output.npy", allow_pickle=True)
-        if len(output) == 6:
-            [state_optimised, x_optimised, minimum_optimised, state_reference,
-             minimum_reference, minimum_analytic] = output
-        else:
-            raise ValueError('optimisation_output.npy contains wrong amount of values')
+    if args.solver in ['midaco']:
+        (minimum_optimised, position) = min((mean, idx) for (idx, (mean, stdev)) in enumerate(cost_function_values))
+        x_optimised = x_values[position, :]
+        x_values = None
+    elif args.solver in ['cobyla']:
+        position = -1
+        minimum_optimised = cost_function_values[position][0]
+        x_optimised = x_values[position, :]
+        x_values = None
     else:
-        if args.solver in ['midaco']:
-            (minimum_optimised, position) = min((mean, idx) for (idx, (mean, stdev)) in enumerate(cost_function_values))
-            x_optimised = x_values[position, :]
-            x_values = None
-        elif args.solver in ['cobyla']:
-            position = -1
-            minimum_optimised = cost_function_values[position][0]
-            x_optimised = x_values[position, :]
-            x_values = None
-        else:
-            position = -1
-            minimum_optimised = cost_function_values[position][0]
-            x_optimised = x_values[position, :]
+        position = -1
+        minimum_optimised = cost_function_values[position][0]
+        x_optimised = x_values[position, :]
 
-        eigenvalues, eigenvectors = eig(problem_func.hamiltonian)
-        minimum_reference, state_reference = min((val, vec) for (val, vec) in zip(eigenvalues, eigenvectors.T))
+    eigenvalues, eigenvectors = eig(problem_func.hamiltonian)
+    minimum_reference, state_reference = min((val, vec) for (val, vec) in zip(eigenvalues, eigenvectors.T))
 
-        minimum_analytic = problem_func.analytic_minimum
+    minimum_analytic = problem_func.analytic_minimum
 
-        state_optimised = problem_func.evaluate_state(x_optimised)
-        state_optimised = np.sign(state_optimised[0]) * state_optimised
-
-        np.save('optimisation_output', [state_optimised, x_optimised, minimum_optimised, state_reference,
-                                        minimum_reference, minimum_analytic], allow_pickle=True)
+    state_optimised = problem_func.evaluate_state(x_optimised)
+    state_optimised = np.sign(state_optimised[0]) * state_optimised
 
     print('Entanglement entropies for states')
     if args.num_oscillators > 1:

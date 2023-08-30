@@ -4,8 +4,8 @@ import os
 from typing import Optional, Callable, Tuple, List
 
 import numpy as np
-from qiskit.algorithms.optimizers import OptimizerSupportLevel, Optimizer
-from qiskit.aqua import aqua_globals
+from aqua import aqua_globals
+from aqua.components.optimizers import Optimizer, OptimizerSupportLevel
 
 from solver.solver import Solver
 
@@ -172,8 +172,8 @@ class ADAM(Optimizer):
                                            obj: Callable) -> Tuple[tuple, np.ndarray]:
         """
         Obtains the objective function value for params and the analytical quantum derivatives of
-        the objective function with respect to each parameter. Requires
-        2*(number parameters) + 1 objective evaluations
+        the objective function with respect to each parameter. This has been changed from original Qiskit
+        implementation to submit all circuits for cost function and gradient as single call to obj.
 
         Args:
             params: Current value of the parameters to evaluate the objective function

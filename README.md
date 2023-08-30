@@ -22,7 +22,7 @@ conda env create -f environment.yml
 To activate:
 
 ```
-conda activate VQECoarseGrained
+conda activate CoarseGrainedVQE
 ```
 
 ### Running optimisation
